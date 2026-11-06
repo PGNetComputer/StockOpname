@@ -61,6 +61,16 @@ h2 .n{background:#e5e7eb;border-radius:20px;padding:0 8px;font-size:12px}
 .bawah .info b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* ---------- pilih kategori ---------- */
 .lbl{font-size:12px;color:var(--abu);margin:14px 2px 6px}
+.j-utama{border:2px solid var(--h);box-shadow:0 2px 10px rgba(14,122,58,.12)}
+.j-utama .l1h{cursor:default}.j-utama .l1h b{font-size:16px}
+.j-alasan{padding:0 12px 10px;color:var(--abu);font-size:12.5px}
+.j-kosong{background:#fff;border:1px solid var(--garis);border-radius:12px;padding:14px;color:var(--abu);text-align:center}
+.l1.kunci{background:#f7f8f8}.l1.kunci .l1h b{color:#4b5563;font-weight:500}
+.chip-lv{border-radius:20px;padding:2px 8px;font-size:11.5px;font-weight:700;white-space:nowrap}
+.lv-SR{background:var(--mm);color:var(--m)}.lv-R{background:var(--km);color:var(--k)}.lv-N{background:var(--hm);color:var(--h)}.lv-M3{background:var(--bmd);color:var(--b)}
+.chip-teliti{display:inline-block;background:var(--km);color:var(--k);border-radius:20px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:4px}
+.chip-tunda{display:inline-block;background:var(--mm);color:var(--m);border-radius:20px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:4px}
+.chip-bag{display:inline-block;background:var(--bmd);color:var(--b);border-radius:20px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:4px}
 .l1{background:#fff;border:1px solid var(--garis);border-radius:12px;margin-top:8px;overflow:hidden}
 .l1h{display:flex;align-items:center;gap:8px;padding:11px 12px;cursor:pointer}
 .l1h b{flex:1;font-weight:600}
@@ -422,7 +432,7 @@ function subKat(kat, nm){
   var K=String(kat).toUpperCase(), N=String(nm), m;
   if (/PROCESSOR INTEL/.test(K)) return genIntel(N);
   if (/PROCESSOR AMD/.test(K)){ m=N.match(/ryzen\s*(\d)/i); return m?'Ryzen '+m[1]:'Lainnya'; }
-  if (/^RAM/.test(K)){ m=N.match(/(DDR\d L?)\s*(\d+\s?GB)/i); return m?(m[1]+' '+m[2]).toUpperCase().replace(/\s+/g,' ').replace(/(\d) GB/,'$1GB'):'Lainnya'; }
+  if (/^RAM/.test(K)){ m=N.match(/(DDR\d\s?L?)\s*(\d+\s?GB)/i); return m?(m[1]+' '+m[2]).toUpperCase().replace(/\s+/g,' ').replace(/(\d) GB/,'$1GB'):'Lainnya'; }
   if (/^SSD|HARD DISK|HDD/.test(K)){
     m=N.match(/(\d+(?:[.,]\d+)?)\s?(GB|TB)/i);
     var f=N.match(/\b(22[34]\d)\b/);
@@ -454,7 +464,95 @@ function pohon(){
   l1.sort(urutL1);
   POHON={l1:l1, d:d, unit:unit}; POHON_VER=KTLG.ver; return POHON;
 }
-function sudahOpname(kat){ return RIW && RIW.selesai ? RIW.selesai[kat] : ''; }
+function sudahOpname(kat){
+  if (RIW && RIW.selesai && RIW.selesai[kat]==='antri') return 'antri';
+  if (jadwalAktif()) return JD().sudah[kat]||'';
+  return RIW && RIW.selesai ? RIW.selesai[kat] : '';
+}
+
+/* ================= JADWAL OTOMATIS =================
+   Server mengirim RIW.jadwal = { hari:'YYYY-MM-DD', unitTerakhir:{unit:'YYYY-MM-DD'},
+     hilangKat:{KATEGORI:n}, hilangSub:{unit:n}, atur:{KATEGORI:'M3'|'SR'|'R'|'N'} }
+   Aplikasi menentukan 1 kategori per hari. Kategori kecil (≤15 pcs, tidak rawan) digabung jadi 1 "KATEGORI KECIL".
+   Tingkat: ≥4 hilang/90 hari → Sangat rawan (7 hari) · 2–3 → Rawan (14 hari) · 0–1 → Normal (30 hari)
+   M3 = 3× seminggu: kategori dibagi 3 bagian (Senin/Rabu/Jumat) → selesai tiap minggu. */
+var LVL={SR:{nama:'Sangat rawan',hari:7,frek:'tiap minggu'},R:{nama:'Rawan',hari:14,frek:'2× sebulan'},N:{nama:'Normal',hari:30,frek:'1× sebulan'},
+         M3:{nama:'3× seminggu',hari:7,frek:'Sen · Rab · Jum, 1 bagian per hari'}};
+var KECIL='KATEGORI KECIL', BATAS_KECIL=15, HARI_M3={1:0,3:1,5:2};
+function jadwalAktif(){ return !!(RIW && RIW.jadwal && KTLG); }
+function tD(s){ var p=s.split('-'); return new Date(+p[0],p[1]-1,+p[2]); }
+function tS(d){ return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+function tPlus(s,n){ var d=tD(s); d.setDate(d.getDate()+n); return tS(d); }
+function tSel(a,b){ return Math.round((tD(a)-tD(b))/864e5); }
+function tSenin(s){ var d=tD(s); d.setDate(d.getDate()-((d.getDay()+6)%7)); return tS(d); }
+var NAMA_HR=['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'], NAMA_BL=['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+function tPendek(s){ var d=tD(s); return NAMA_HR[d.getDay()].slice(0,3)+', '+d.getDate()+' '+NAMA_BL[d.getMonth()]; }
+var _JD=null, _JDkey='';
+function JD(){
+  var J=RIW.jadwal, P=pohon(), key=JSON.stringify(J)+'|'+KTLG.ver;
+  if (_JD && _JDkey===key) return _JD;
+  var hari=J.hari, dow=tD(hari).getDay(), ut=J.unitTerakhir||{}, hk=J.hilangKat||{}, hs=J.hilangSub||{}, atur=J.atur||{};
+  function lvAuto(n){ return n>=4?'SR':n>=2?'R':'N'; }
+  // grup = kategori utama; kategori kecil yang tidak rawan digabung
+  var grup={}, urut=[];
+  P.l1.forEach(function(k){
+    var units=Object.keys(P.d[k]).sort(urutSub).map(function(y){ return P.d[k][y].key; });
+    var pcs=units.reduce(function(t,u){ return t+P.unit[u].q; },0), lv=atur[k]||lvAuto(hk[k]||0);
+    var g = (pcs<=BATAS_KECIL && lv==='N' && !atur[k]) ? (grup[KECIL]||(grup[KECIL]={nama:KECIL,lv:'N',units:[],kats:[]})) : (grup[k]={nama:k,lv:lv,units:[],kats:[]});
+    g.units=g.units.concat(units); g.kats.push(k); if (urut.indexOf(g.nama)<0) urut.push(g.nama);
+  });
+  // bagian 3× seminggu: dibagi 3 seimbang, sub yang sering hilang di bagian 1
+  function bagi3(g){
+    var b=[{u:[],p:0,h:0},{u:[],p:0,h:0},{u:[],p:0,h:0}];
+    g.units.slice().sort(function(a,c){ return P.unit[c].q-P.unit[a].q; }).forEach(function(u){
+      var t=b.slice().sort(function(x,y){ return x.p-y.p; })[0]; t.u.push(u); t.p+=P.unit[u].q; t.h+=hs[u]||0; });
+    b.sort(function(x,y){ return y.h-x.h || x.p-y.p; });
+    return b.map(function(x){ return g.units.filter(function(u){ return x.u.indexOf(u)>=0; }); });
+  }
+  var sudah={}, info={};
+  urut.forEach(function(n){
+    var g=grup[n], L=LVL[g.lv], perlu=[], tempo=[], sdh=0;
+    if (g.lv==='M3') g.bagian=bagi3(g);
+    g.units.forEach(function(u){
+      var t=ut[u]||'2000-01-01', jt=g.lv==='M3' ? (t>=tSenin(hari) ? tPlus(tSenin(hari),7) : hari) : tPlus(t,L.hari);
+      if (jt<=hari) perlu.push(u); else { sudah[u]=t.slice(8,10)+'/'+t.slice(5,7); sdh++; }
+      tempo.push(jt);
+    });
+    tempo.sort();
+    g.perlu=perlu; g.jt=tempo[0]; g.telat=tSel(hari,tempo[0]); g.lanjut=perlu.length>0 && sdh>0 && g.lv!=='M3';
+    info[n]=g;
+  });
+  // pilih 1 kategori untuk hari ini
+  var libur=dow===0, pilih=null, alasan='';
+  function top(arr){ return arr.sort(function(a,b){ return b.telat/LVL[b.lv].hari-a.telat/LVL[a.lv].hari || (a.jt<b.jt?-1:1); })[0]; }
+  var G=urut.map(function(n){ return info[n]; });
+  if (!libur){
+    var m3=G.filter(function(g){ return g.lv==='M3' && HARI_M3[dow]!==undefined; })[0];
+    if (m3){
+      pilih=m3; var b=HARI_M3[dow], snn=tSenin(hari);
+      // tunggakan: sub yang minggu lalu (atau lebih lama) tidak dicek & minggu ini belum → ikut wajib hari ini, makin lama makin numpuk
+      m3.tunggak={};
+      m3.units.forEach(function(u){ var t=ut[u]; if (!t || t>=snn) return;   // belum pernah diopname → tidak dihitung tertunda
+        var mg=Math.floor(tSel(snn, tSenin(t))/7)-1; if (mg>=1) m3.tunggak[u]=Math.min(mg,99); });
+      var tg=Object.keys(m3.tunggak);
+      m3.hariIni=m3.bagian[b].concat(tg.filter(function(u){ return m3.bagian[b].indexOf(u)<0; }));
+      alasan='Bagian '+(b+1)+' dari 3'+(tg.length?' + '+tg.length+' sub tertunda':'')+' · '+LVL.M3.frek;
+    }
+    else {
+      pilih = top(G.filter(function(g){ return g.lv==='SR' && g.perlu.length; }))
+           || top(G.filter(function(g){ return g.lv==='R' && g.perlu.length; }))
+           || top(G.filter(function(g){ return g.lanjut; }))
+           || top(G.filter(function(g){ return g.lv==='N' && g.perlu.length; }))
+           || G.filter(function(g){ return g.lv==='N'; }).sort(function(a,b){ return a.jt<b.jt?-1:1; })[0];
+      if (pilih) alasan = pilih.lanjut ? 'Lanjutan — '+pilih.perlu.length+' sub belum' : pilih.telat>0 ? 'Telat '+pilih.telat+' hari' : pilih.telat===0 ? 'Jatuh tempo hari ini' : 'Dimajukan (jadwal '+tPendek(pilih.jt)+')';
+      if (pilih) alasan += ' · '+LVL[pilih.lv].frek;
+    }
+  }
+  var aman=G.filter(function(g){ return !g.perlu.length; }).length;
+  _JD={hari:hari, libur:libur, grup:info, urut:urut, pilih:pilih, alasan:alasan, sudah:sudah, aman:aman, total:G.length, hs:hs};
+  _JDkey=key; return _JD;
+}
+function chipLv(lv){ return '<span class="chip-lv lv-'+lv+'">'+LVL[lv].nama+'</span>'; }
 function semuaDaun(){ return Object.keys(pohon().unit); }
 
 var BUKA_SUB={}, BUKA_L1={};
@@ -472,6 +570,7 @@ function renderPilih(){
   var box=$('daftarKat');
   if (!KTLG){ box.innerHTML='<div class="muat"><div class="sp"></div>Memuat katalog…</div>'; return; }
   var P=pohon();
+  if (jadwalAktif()) return renderPilihJadwal(box, P);
   // semua kategori: akordeon
   var html='';
   P.l1.forEach(function(x){
@@ -487,7 +586,44 @@ function renderPilih(){
   box.innerHTML=html;
   renderBawah();
 }
+function rowSubJadwal(u, label, J){
+  var g=pohon().unit[u], s=sudahOpname(u), nm=Object.keys(g.items).sort(), hari=J.pilih&&J.pilih.hariIni&&J.pilih.hariIni.indexOf(u)>=0;
+  var h='<div class="daun'+(s?' sudah':'')+'"><input type="checkbox" data-kat="'+esc(u)+'"'+(PILIH[u]?' checked':'')+(s?' disabled':'')+' aria-label="'+esc(u)+'">'+
+    '<div class="t" data-buka="'+esc(u)+'"><b>'+esc(label)+'</b>'+((J.hs[u]||0)>0?' <span class="chip-teliti">Cek teliti</span>':'')+(J.pilih&&J.pilih.tunggak&&J.pilih.tunggak[u]&&!s?' <span class="chip-tunda">Tertunda '+J.pilih.tunggak[u]+' minggu</span>':(hari?' <span class="chip-bag">Bagian hari ini</span>':''))+
+    '<div class="muted">'+nm.length+' jenis '+(BUKA_SUB[u]?'▾':'▸')+'</div></div>'+
+    (s?'<span class="tag-ok">'+(s==='antri'?'⏳ menyimpan':'✓ '+esc(s))+'</span>':'<span class="q">'+g.q+'</span>')+'</div>';
+  if (BUKA_SUB[u]) h+='<div class="subitem">'+nm.map(function(n){ return '<div><span>'+esc(n)+'</span><b>'+g.items[n].q+'</b></div>'; }).join('')+'</div>';
+  return h;
+}
+function renderPilihJadwal(box, P){
+  var J=JD(), html='';
+  setT($('lblSemua'), J.libur?'Hari Minggu — libur':'Jadwal hari ini');
+  if (J.libur) html+='<div class="j-kosong">Hari ini tidak ada jadwal opname.</div>';
+  else if (J.pilih){
+    var g=J.pilih, belum=g.units.filter(function(u){ return !sudahOpname(u); });
+    var tot=g.units.reduce(function(t,u){ return t+P.unit[u].q; },0);
+    html+='<div class="l1 j-utama"><div class="l1h"><b>'+esc(g.nama)+'</b>'+chipLv(g.lv)+
+      (belum.length?'<span class="semua" data-semua-j="1">Pilih semua</span>':'')+'</div>'+
+      '<div class="j-alasan">'+esc(J.alasan)+' · '+tot+' pcs'+(g.kats.length>1?'<br>Isi: '+g.kats.map(esc).join(', '):'')+'</div>';
+    // urutan: tertunda paling lama → bagian hari ini → sisanya
+    var tk=g.tunggak||{}, hi=g.hariIni||[];
+    g.units.slice().sort(function(a,b){ return (tk[b]||0)-(tk[a]||0) || (hi.indexOf(b)>=0)-(hi.indexOf(a)>=0) || g.units.indexOf(a)-g.units.indexOf(b); }).forEach(function(u){ var p=u.split(' › '); html+=rowSubJadwal(u, g.kats.length>1?(p[0]+(p[1]!=='Semua'?' · '+p[1]:'')):p[1], J); });
+    html+='</div>';
+  }
+  html+='<div class="lbl">Kategori lain — belum jadwalnya</div>';
+  J.urut.filter(function(n){ return !J.pilih || n!==J.pilih.nama; }).map(function(n){ return J.grup[n]; })
+    .sort(function(a,b){ return a.jt<b.jt?-1:1; }).forEach(function(g){
+      var tx;
+      if (g.lv==='M3'){ var d=J.hari; do { d=tPlus(d,1); } while (HARI_M3[tD(d).getDay()]===undefined); tx='jadwal '+tPendek(d); }
+      else { var jd=g.jt; if (tD(jd).getDay()===0) jd=tPlus(jd,1); tx = g.perlu.length && g.jt<=J.hari ? 'menunggu giliran' : 'jadwal '+tPendek(jd); }
+      html+='<div class="l1 kunci"><div class="l1h" data-kunci="'+esc(tx)+'"><b>'+esc(g.nama)+'</b><span class="muted">🔒 '+esc(tx)+'</span></div></div>';
+    });
+  box.innerHTML=html; renderBawah();
+}
 document.addEventListener('click', function(e){
+  var tk=e.target.closest('[data-kunci]'); if (tk){ toast('Belum jadwalnya — '+tk.getAttribute('data-kunci'),'',2500); return; }
+  var tj=e.target.closest('[data-semua-j]'); if (tj){ var J=JD(), daun=J.pilih.units.filter(function(z){ return !sudahOpname(z); }), all=daun.every(function(z){ return PILIH[z]; });
+    daun.forEach(function(z){ if(all) delete PILIH[z]; else PILIH[z]=1; }); renderPilih(); return; }
   var t=e.target.closest('[data-semua]');
   if(!t){ t=e.target.closest('[data-l1]'); if(t){ var x1=t.getAttribute('data-l1'); BUKA_L1[x1]=!BUKA_L1[x1]; renderPilih(); return; } }
   else t=null;
@@ -510,7 +646,10 @@ document.addEventListener('change', function(e){
 
 /* ---------- TOP BAR ---------- */
 function renderTop(){
-  if (RIW && RIW.periode){
+  if (jadwalAktif()){
+    var J=JD(); setT($('perLabel'), tPendek(J.hari)+(J.pilih?' · '+J.pilih.nama:''));
+    setT($('perAngka'), J.aman+'/'+J.total+' kategori aman'); $('perBar').style.width=Math.round(J.aman*100/J.total)+'%';
+  } else if (RIW && RIW.periode){
     setT($('perLabel'),'Periode '+RIW.periode.label);
     if (KTLG){ var d=semuaDaun(), s=d.filter(function(z){return sudahOpname(z);}).length;
       setT($('perAngka'), s+'/'+d.length+' selesai'); $('perBar').style.width=(d.length?Math.round(s*100/d.length):0)+'%'; }
@@ -1280,7 +1419,7 @@ function renderBawah(){
   if (!KERJA){
     var k=Object.keys(PILIH), q=0, P=KTLG?pohon():null;
     if (P) k.forEach(function(z){ if(P.unit[z]) q+=P.unit[z].q; });
-    html='<div class="info">'+(k.length?'<b>'+esc(k.map(namaUnit).join(', '))+'</b><div class="muted">'+q+' pcs</div>':'<span class="muted">Centang kategori (bisa lebih dari satu)</span>')+'</div>'+
+    html='<div class="info">'+(k.length?'<b>'+esc(k.map(namaUnit).join(', '))+'</b><div class="muted">'+q+' pcs</div>':'<span class="muted">'+(jadwalAktif()?'Centang sub-kategori yang mau discan':'Centang kategori (bisa lebih dari satu)')+'</span>')+'</div>'+
       (k.length?'<button class="btn-p" onclick="PILIH={};renderPilih()">Kosongkan</button>':'')+
       '<button class="btn-h" onclick="mulaiOpname()"'+(k.length?'':' disabled')+'>Mulai scan</button>';
   } else if (KERJA.tahap==='scan'){
