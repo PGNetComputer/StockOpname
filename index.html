@@ -878,7 +878,10 @@ function bukaBelum(){ if(!DAFTAR_BUKA) toggleDaftar(); var el=$('lsBelum'); if(e
 // Kotak "x belum ketemu": tombol jelas + saran tempat mencari + daftar singkat
 var BELUM_BUKA=false;
 function toggleBelum(){ bukaBelumPop(); }
-function bukaBelumPop(){ if(!KERJA) return; BELUM_BUKA=true; $('belumPop').hidden=false; renderBelumBox(hitung()); }
+function bukaBelumPop(){ if(!KERJA) return; BELUM_BUKA=true;
+  // siapkan data lacak di latar belakang (1 panggilan untuk semua) → tombol "Lacak barang ini" langsung tampil
+  var siap=daftarKurang().map(function(x){ return x.k; }).filter(function(k){ var s=KERJA.lacak[k]; return !s||s==='gagal'; });
+  if (siap.length) mintaLacak(siap); $('belumPop').hidden=false; renderBelumBox(hitung()); }
 function tutupBelum(){ BELUM_BUKA=false; $('belumPop').hidden=true; }
 // Tombol merah "x pcs belum ketemu" → diketuk muncul pop up: daftar barang dulu, lalu saran tempat mencari
 function renderBelumBox(h){
@@ -1062,7 +1065,7 @@ function keLacak(){
   var lanjut=function(){
     KERJA.tahap='lacak';
     antriPotong();
-    rpc('segar','soSegarkan',[]).then(function(r){ terimaKatalog(r.katalog); }).catch(function(){});
+    rpc('segar','soPanaskan',[KTLG?KTLG.ver:'']).then(function(r){ if (r.katalog) terimaKatalog(r.katalog); if (r.riwayat) terimaRiwayat(r.riwayat); }).catch(function(){});
     mintaLacak(kur.map(function(x){return x.k;}).concat(Object.keys(KERJA.asing)));
     simpanKerja(); tampilView();
   };
