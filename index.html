@@ -484,6 +484,13 @@ function tD(s){ var p=s.split('-'); return new Date(+p[0],p[1]-1,+p[2]); }
 function tS(d){ return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
 function tPlus(s,n){ var d=tD(s); d.setDate(d.getDate()+n); return tS(d); }
 function tSel(a,b){ return Math.round((tD(a)-tD(b))/864e5); }
+function tAkhirBlnDepan(s){ var d=tD(s); return tS(new Date(d.getFullYear(), d.getMonth()+2, 0)); }
+function bulanAwal(){ return RIW.jadwal.hari.slice(0,8)+'01'; }
+// bulan ini: sub-kategori yang sudah di-SO sejak tanggal 1 (target: semua kategori ter-SO tiap bulan)
+function sudahBulanIni(u){
+  if (RIW && RIW.selesai && RIW.selesai[u]==='antri') return 'antri';
+  var t=(RIW.jadwal.unitTerakhir||{})[u]; return t && t>=bulanAwal() ? t.slice(8,10)+'/'+t.slice(5,7) : '';
+}
 function tSenin(s){ var d=tD(s); d.setDate(d.getDate()-((d.getDay()+6)%7)); return tS(d); }
 var NAMA_HR=['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'], NAMA_BL=['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
 function tPendek(s){ var d=tD(s); return NAMA_HR[d.getDay()].slice(0,3)+', '+d.getDate()+' '+NAMA_BL[d.getMonth()]; }
@@ -515,6 +522,7 @@ function JD(){
     if (g.lv==='M3') g.bagian=bagi3(g);
     g.units.forEach(function(u){
       var t=ut[u]||'2000-01-01', jt=g.lv==='M3' ? (t>=tSenin(hari) ? tPlus(tSenin(hari),7) : hari) : tPlus(t,L.hari);
+      if (g.lv==='N'){ var ab=tAkhirBlnDepan(t); if (ab<jt) jt=ab; }   // normal: wajib tiap bulan kalender, tidak boleh lompat 1 bulan
       if (jt<=hari) perlu.push(u); else { sudah[u]=t.slice(8,10)+'/'+t.slice(5,7); sdh++; }
       tempo.push(jt);
     });
@@ -539,17 +547,27 @@ function JD(){
       alasan='Bagian '+(b+1)+' dari 3'+(tg.length?' + '+tg.length+' sub tertunda':'')+' · '+LVL.M3.frek;
     }
     else {
+      // target bulanan: kategori normal yang belum ter-SO bulan ini — kalau sisa hari kerja bulan ini mepet, didahulukan
+      var awalBln=hari.slice(0,8)+'01', akhirBln=tS(new Date(tD(hari).getFullYear(), tD(hari).getMonth()+1, 0)), adaM3=G.some(function(g){ return g.lv==='M3'; });
+      var blmBln=G.filter(function(g){ return g.lv==='N' && g.units.some(function(u){ return !(ut[u] && ut[u]>=awalBln); }); });
+      var sisaHari=0; for (var d=hari; d<=akhirBln; d=tPlus(d,1)){ var w=tD(d).getDay(); if (w!==0 && !(adaM3 && HARI_M3[w]!==undefined)) sisaHari++; }
+      var mepet = blmBln.length && blmBln.length >= sisaHari-1
+        ? blmBln.sort(function(a,b){ return a.jt<b.jt?-1:1; })[0] : null;
       pilih = top(G.filter(function(g){ return g.lv==='SR' && g.perlu.length; }))
+           || mepet
            || top(G.filter(function(g){ return g.lv==='R' && g.perlu.length; }))
            || top(G.filter(function(g){ return g.lanjut; }))
            || top(G.filter(function(g){ return g.lv==='N' && g.perlu.length; }))
            || G.filter(function(g){ return g.lv==='N'; }).sort(function(a,b){ return a.jt<b.jt?-1:1; })[0];
-      if (pilih) alasan = pilih.lanjut ? 'Lanjutan — '+pilih.perlu.length+' sub belum' : pilih.telat>0 ? 'Telat '+pilih.telat+' hari' : pilih.telat===0 ? 'Jatuh tempo hari ini' : 'Dimajukan (jadwal '+tPendek(pilih.jt)+')';
+      if (pilih && pilih===mepet) alasan='Belum ter-SO bulan ini — sisa '+sisaHari+' hari kerja';
+      else if (pilih) alasan = pilih.lanjut ? 'Lanjutan — '+pilih.perlu.length+' sub belum' : pilih.telat>0 ? 'Telat '+pilih.telat+' hari' : pilih.telat===0 ? 'Jatuh tempo hari ini' : 'Dimajukan (jadwal '+tPendek(pilih.jt)+')';
       if (pilih) alasan += ' · '+LVL[pilih.lv].frek;
     }
   }
   var aman=G.filter(function(g){ return !g.perlu.length; }).length;
-  _JD={hari:hari, libur:libur, grup:info, urut:urut, pilih:pilih, alasan:alasan, sudah:sudah, aman:aman, total:G.length, hs:hs};
+  var blnSelesai=P.l1.filter(function(k){ return Object.keys(P.d[k]).every(function(y){ return sudahBulanIni(P.d[k][y].key); }); }).length;
+  _JD={hari:hari, libur:libur, grup:info, urut:urut, pilih:pilih, alasan:alasan, sudah:sudah, aman:aman, total:G.length, hs:hs,
+       blnSelesai:blnSelesai, blnTotal:P.l1.length};
   _JDkey=key; return _JD;
 }
 function chipLv(lv){ return '<span class="chip-lv lv-'+lv+'">'+LVL[lv].nama+'</span>'; }
@@ -648,7 +666,7 @@ document.addEventListener('change', function(e){
 function renderTop(){
   if (jadwalAktif()){
     var J=JD(); setT($('perLabel'), tPendek(J.hari)+(J.pilih?' · '+J.pilih.nama:''));
-    setT($('perAngka'), J.aman+'/'+J.total+' kategori aman'); $('perBar').style.width=Math.round(J.aman*100/J.total)+'%';
+    setT($('perAngka'), NAMA_BL[tD(J.hari).getMonth()]+': '+J.blnSelesai+'/'+J.blnTotal+' kategori ter-SO'); $('perBar').style.width=Math.round(J.blnSelesai*100/J.blnTotal)+'%';
   } else if (RIW && RIW.periode){
     setT($('perLabel'),'Periode '+RIW.periode.label);
     if (KTLG){ var d=semuaDaun(), s=d.filter(function(z){return sudahOpname(z);}).length;
@@ -1202,17 +1220,18 @@ function susunLaporan(){
   var items=Object.keys(KERJA.target).map(function(k){ var T=KERJA.target[k]; return {ka:T.ka,nama:T.nama,kat:T.kat,qty:T.qty,scan:KERJA.scan[k]||0}; })
     .sort(function(a,b){ return a.kat<b.kat?-1:a.kat>b.kat?1:(a.nama<b.nama?-1:a.nama>b.nama?1:0); });
   var tidak=daftarKurang().map(function(x){ var kp=KERJA.kep[x.k]||{}; return {ka:x.T.ka,nama:x.T.nama,kat:x.T.kat,qty:x.T.qty,kur:x.kurang,aksi:kp.aksi||'',info:kp.info||'',lacak:KERJA.lacak[x.k]}; });
-  var belum=Object.keys(P.unit).filter(function(z){ return !sudahOpname(z) && KERJA.kategori.indexOf(z)<0; })
+  var sdh=jadwalAktif()?sudahBulanIni:sudahOpname;
+  var belum=Object.keys(P.unit).filter(function(z){ return !sdh(z) && KERJA.kategori.indexOf(z)<0; })
     .sort().map(function(z){ return {key:z,q:P.unit[z].q,n:P.unit[z].n}; });
-  var sudah=Object.keys(P.unit).filter(function(z){ return sudahOpname(z) && KERJA.kategori.indexOf(z)<0; })
-    .sort().map(function(z){ return {key:z,tgl:sudahOpname(z)}; });
+  var sudah=Object.keys(P.unit).filter(function(z){ return sdh(z) && KERJA.kategori.indexOf(z)<0; })
+    .sort().map(function(z){ return {key:z,tgl:sdh(z)}; });
   var h=hitung();
   return { id:KERJA.id, tgl:tglPanjang(now), jam:('0'+now.getHours()).slice(-2)+':'+('0'+now.getMinutes()).slice(-2),
     file:'Stok_Opname_'+('0'+now.getDate()).slice(-2)+('0'+(now.getMonth()+1)).slice(-2)+now.getFullYear()+'_'+('0'+now.getHours()).slice(-2)+('0'+now.getMinutes()).slice(-2),
     periode:RIW&&RIW.periode?RIW.periode.label:'', kategori:KERJA.kategori.slice(), tot:h.tot, ktm:h.ok, items:items, tidak:tidak,
     beda:Object.keys(KERJA.beda).map(function(k){ var b=KERJA.beda[k]; return {ka:b.ka,nama:b.nama,kat:b.kat,n:b.n}; }),
     asing:Object.keys(KERJA.asing).map(function(k){ var a=KERJA.asing[k]; return {ka:a.ka,nama:a.nama,modal:a.modal,jenis:a.jenis,n:a.n,info:a.kep?(a.kep.info||'dikirim'):''}; }),
-    belum:belum, sudah:sudah, totalUnit:Object.keys(P.unit).length,
+    belum:belum, sudah:sudah, totalUnit:Object.keys(P.unit).length, kapan:jadwalAktif()?'bulan ini':'periode ini',
     pindah:Object.keys(KERJA.pindah||{}).map(function(k){ var x=KERJA.pindah[k]; return {ka:x.ka,nama:x.nama,dari:x.dari,ke:x.ke}; }),
     potong:Object.keys(KERJA.potong||{}).map(function(k){ var x=KERJA.potong[k], kh=(KERJA.ktmHilang||{})[k]; return {ka:x.ka,nama:x.nama,kat:x.kat,n:x.n,st:x.st,ktm:kh?kh.n:0,info:x.kep?(x.kep.info||'dikirim'):''}; }),
     ktmHilang:Object.keys(KERJA.ktmHilang||{}).filter(function(k){ return !(KERJA.potong||{})[k]; }).map(function(k){ var x=KERJA.ktmHilang[k]; return {ka:x.ka,nama:x.nama,kat:x.kat,n:0,st:x.st,ktm:x.n}; }) };
@@ -1268,9 +1287,9 @@ function htmlLaporan(L){
   L.items.forEach(function(it,i){ var st=it.scan>=it.qty?(it.scan>it.qty?'<span class="lb">Lebih '+(it.scan-it.qty)+'</span>':'<span class="ok">Sesuai</span>'):'<span class="kr">Kurang '+(it.qty-it.scan)+'</span>';
     h+='<tr><td>'+(i+1)+'</td><td>'+e2(it.ka)+'</td><td>'+e2(it.nama)+'</td><td>'+e2(namaUnit(it.kat))+'</td><td class="r">'+it.qty+'</td><td class="r">'+it.scan+'</td><td>'+st+'</td></tr>'; });
   h+='</table>';
-  h+='<h2>Kategori belum diopname periode ini ('+L.belum.length+' dari '+L.totalUnit+')</h2>';
+  h+='<h2>Kategori belum diopname '+(L.kapan||'periode ini')+' ('+L.belum.length+' dari '+L.totalUnit+')</h2>';
   h+= L.belum.length ? duaKolom(L.belum.map(function(b){ return e2(namaUnit(b.key))+' <span class="mut">· '+b.q+' pcs</span>'; })) : '<div class="ok">Semua kategori sudah diopname.</div>';
-  if (L.sudah.length){ h+='<h2>Sudah diopname sebelumnya di periode ini ('+L.sudah.length+')</h2>'+duaKolom(L.sudah.map(function(b){ return e2(namaUnit(b.key))+' <span class="mut">· '+e2(b.tgl==='antri'?'menyimpan':b.tgl)+'</span>'; })); }
+  if (L.sudah.length){ h+='<h2>Sudah diopname sebelumnya '+(L.kapan||'periode ini')+' ('+L.sudah.length+')</h2>'+duaKolom(L.sudah.map(function(b){ return e2(namaUnit(b.key))+' <span class="mut">· '+e2(b.tgl==='antri'?'menyimpan':b.tgl)+'</span>'; })); }
   h+='<table class="ft"><tr><td>Petugas<div class="ttd"></div>(.................)</td><td>Diperiksa<div class="ttd"></div>(.................)</td></tr></table>';
   return h+'</body></html>';
 }
@@ -1393,8 +1412,8 @@ function bukaRiwayat(){
       '<div class="muted">Ketemu '+x.ktm+'/'+x.tot+' pcs · Hilang '+(x.hil||0)+' · Aset '+(x.aset||0)+' · Ke katalog '+(x.ktlg||0)+(x.klr?' · Keluar '+x.klr:'')+(x.beda?' · Beda kategori '+x.beda:'')+(x.asing?' · Asing '+x.asing:'')+'</div></div>';
   }).join(''):'<p class="muted">Belum ada riwayat.</p>';
   if (RIW && KTLG){
-    var belum=semuaDaun().filter(function(z){return !sudahOpname(z);});
-    html='<div class="kotak-k" style="margin-top:0"><b>Belum di-opname periode ini ('+belum.length+'):</b><br>'+esc(belum.join(', ')||'— semua sudah 🎉')+'</div>'+html;
+    var sdh2=jadwalAktif()?sudahBulanIni:sudahOpname, belum=semuaDaun().filter(function(z){return !sdh2(z);});
+    html='<div class="kotak-k" style="margin-top:0"><b>Belum di-opname '+(jadwalAktif()?'bulan ini':'periode ini')+' ('+belum.length+'):</b><br>'+esc(belum.join(', ')||'— semua sudah 🎉')+'</div>'+html;
   }
   bukaModal('Riwayat stok opname', html, [{t:'Tutup',c:'btn-p'}].concat(LAPORAN?[{t:'Laporan terakhir',c:'btn-h',f:lihatLaporan}]:[]));
 }
